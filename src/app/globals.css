@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gradient-pink min-h-screen;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-background/50 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-secondary/50;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply rounded-full bg-primary text-white font-bold py-3 px-6 shadow-lg;
+    @apply hover:bg-primary/90 active:scale-95 transition-all duration-200;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary;
+  }
+  
+  .btn-secondary {
+    @apply rounded-full border-2 border-primary text-primary font-bold py-3 px-6;
+    @apply hover:bg-primary/5 active:scale-95 transition-all duration-200;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .card {
+    @apply rounded-2xl shadow-lg bg-white p-6;
+  }
+  
+  .input-field {
+    @apply rounded-xl border-2 border-muted px-4 py-3 w-full;
+    @apply focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20;
+    @apply transition-all duration-200;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
