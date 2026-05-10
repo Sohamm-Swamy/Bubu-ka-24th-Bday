@@ -60,7 +60,7 @@ lib/
 ## The 5 Phases (Never change this flow)
 1. Booking & Call Screen
 2. 24 Kisses OTP Reveal
-3. Clue Loop (3 locations: Photo Booth → Bowling → Cafe)
+3. Clue Loop (3 locations: Upvan Lake → Lake Shore Mall → Gremy All Day Cafe)
 4. Final Reward — 300 Bubu Points + Choose 3 Bonus Services
 5. Outro — Memorable moment text + Final rating + Goodbye message
 

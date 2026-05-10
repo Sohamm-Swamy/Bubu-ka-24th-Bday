@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Star } from "lucide-react";
 import { useGameState } from "@/lib/useGameState";
-import { BONUS_SERVICES } from "@/lib/constants";
+import { BONUS_SERVICES, YOUR_EMAIL } from "@/lib/constants";
 import { PointsBadge } from "@/components/ui/PointsBadge";
 import { Header } from "@/components/shared/Header";
 
@@ -35,6 +35,22 @@ export function Phase4Reward({ onNext, showDevMode, onSkipPhase, forceRemount }:
   };
 
   const handleSubmit = () => {
+    // Generate email with selected bonus services
+    const selectedServices = state.selectedBonusServices.map(index => BONUS_SERVICES[index]);
+
+    const emailSubject = encodeURIComponent("🎂 Bubu's Birthday Adventure - Selected Rewards!");
+    const emailBody = encodeURIComponent(
+      `🌟 Hello!\n\n` +
+      `Bubu has completed her birthday scavenger hunt and selected her bonus rewards!\n\n` +
+      `📋 Selected Rewards:\n${selectedServices.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n` +
+      `🎉 Total Points Collected: 300 Bubu Points\n\n` +
+      `Hope you enjoy fulfilling these!💕`
+    );
+
+    // Open email client with pre-filled content
+    const mailtoLink = `mailto:${YOUR_EMAIL}?subject=${emailSubject}&body=${emailBody}`;
+    window.open(mailtoLink, '_blank');
+
     // Direct localStorage update
     try {
       const stored = localStorage.getItem('bubu_rapido_state');

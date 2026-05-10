@@ -114,6 +114,20 @@ export function Phase1Booking({ showDevMode, forceRemount }: Phase1BookingProps)
                 </h2>
               </motion.div>
 
+              {/* Dudubiker GIF */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex justify-center"
+              >
+                <img
+                  src="/dudubiker.gif"
+                  alt="Dudu on Bike"
+                  className="w-48 h-auto rounded-xl"
+                />
+              </motion.div>
+
               <button
                 type="button"
                 onClick={handleBook}

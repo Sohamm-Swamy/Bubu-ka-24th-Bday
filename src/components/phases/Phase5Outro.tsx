@@ -180,8 +180,32 @@ export function Phase5Outro({ showDevMode, forceRemount }: Phase5OutroProps) {
                 <h2 className="text-xl font-bold text-text-primary mt-6">How was your experience?</h2>
                 <p className="text-text-secondary text-sm mt-2">Rate your birthday adventure</p>
 
-                {finalRating === 5 && <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-primary font-semibold mt-4">Thank you so much!</motion.p>}
-                {(finalRating === 1 || finalRating === 2) && <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-text-secondary mt-4">I'll do better next time!</motion.p>}
+                {/* Custom messages for each star rating */}
+                {finalRating === 5 && (
+                  <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-primary font-semibold mt-4">
+                    The BEST birthday ever! I'm so lucky to have you! 💕
+                  </motion.p>
+                )}
+                {finalRating === 4 && (
+                  <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-primary font-semibold mt-4">
+                    Almost perfect! Just means we need more adventures together! ✨
+                  </motion.p>
+                )}
+                {finalRating === 3 && (
+                  <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-text-secondary mt-4">
+                    Good but can be better! Next year will be even more amazing! 🎉
+                  </motion.p>
+                )}
+                {finalRating === 2 && (
+                  <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-text-secondary mt-4">
+                    I'll plan better next time, I promise! Still love you! 🥺
+                  </motion.p>
+                )}
+                {finalRating === 1 && (
+                  <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-text-secondary mt-4">
+                    Oh no! Tell me what went wrong so I can fix it! 💔
+                  </motion.p>
+                )}
               </div>
 
               <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSubmitRating} disabled={!finalRating || isLoading} className="btn-primary w-full text-lg py-4">

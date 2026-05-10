@@ -49,7 +49,7 @@ export async function downloadMemoryWithPhoto(
 
   // Build HTML for all location photos
   let photosHtml = '';
-  const locationNames = ['Photo Booth Adventure', 'Bowling Fun', 'Cafe Moments'];
+  const locationNames = ['Fun Art at Upvan Lake', 'Lake Shore Fun Spree', 'Dine and Unwind'];
 
   locationPhotos.forEach((photo, index) => {
     if (photo) {
