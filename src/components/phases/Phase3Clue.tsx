@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Navigation, CheckCircle, AlertCircle } from "lucide-react";
+import { MapPin, Navigation, AlertCircle, Camera } from "lucide-react";
 import { useGameState } from "@/lib/useGameState";
 import { LOCATIONS, CLUE_TIMER_SECONDS, ARRIVAL_RADIUS_METERS } from "@/lib/constants";
 import { haversineDistance } from "@/lib/haversine";
@@ -10,28 +10,36 @@ import { CountdownTimer } from "@/components/ui/CountdownTimer";
 import { MapEmbed } from "@/components/ui/MapEmbed";
 import { SuccessAnimation } from "@/components/ui/SuccessAnimation";
 import { PointsBadge } from "@/components/ui/PointsBadge";
-import { StarRating } from "@/components/ui/StarRating";
+import { Header } from "@/components/shared/Header";
+import { getCameraStream, captureFrame } from "@/lib/photoUtils";
 
 interface Phase3ClueProps {
   onPhaseComplete: () => void;
   showDevMode?: boolean;
   onSkipPhase?: () => void;
+  forceRemount?: () => void;
 }
 
-export function Phase3Clue({
-  onPhaseComplete,
-  showDevMode,
-  onSkipPhase,
-}: Phase3ClueProps) {
+export function Phase3Clue({ onPhaseComplete, showDevMode, onSkipPhase, forceRemount }: Phase3ClueProps) {
   const { state, updateState } = useGameState();
   const [userAnswer, setUserAnswer] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showMapReward, setShowMapReward] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsNoSignal, setGpsNoSignal] = useState(false);
   const [currentDistance, setCurrentDistance] = useState<number | null>(null);
   const [shakeTrigger, setShakeTrigger] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [timerExpired, setTimerExpired] = useState(false);
+  const [canComplete, setCanComplete] = useState(false);
+  const [cooldownEnd, setCooldownEnd] = useState<number | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [showCamera, setShowCamera] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [photoTaken, setPhotoTaken] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const watchIdRef = useRef<number | null>(null);
   const gpsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -41,24 +49,94 @@ export function Phase3Clue({
   const currentLocation = LOCATIONS[state.currentLocationIndex];
   const isLastLocation = state.currentLocationIndex === 2;
 
-  // Reset phase 3 state when location changes
   useEffect(() => {
     return () => {
-      // Cleanup GPS on unmount
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+      if (gpsTimeoutRef.current) clearTimeout(gpsTimeoutRef.current);
+    };
+  }, []);
+
+  // Cooldown countdown timer
+  useEffect(() => {
+    if (!cooldownEnd) return;
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((cooldownEnd - Date.now()) / 1000));
+      setCooldownRemaining(remaining);
+      if (remaining <= 0) clearInterval(interval);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownEnd]);
+
+  // Camera functions
+  const startCamera = async () => {
+    console.log('📷 startCamera called');
+
+    // Step 1 — Get stream FIRST (permission prompt happens here)
+    const stream = await getCameraStream();
+
+    if (!stream) {
+      // getCameraStream already shows specific error alerts
+      console.log('❌ No stream returned');
+      return;
+    }
+
+    // Step 2 — Store stream immediately so cleanup works
+    streamRef.current = stream;
+
+    // Step 3 — Show the camera UI (this mounts the <video> element)
+    setShowCamera(true);
+
+    // Step 4 — Wait for React to render the video element
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Step 5 — Now attach stream to video element
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      try {
+        await videoRef.current.play();
+        console.log('✅ Camera playing');
+      } catch (playErr) {
+        console.error('❌ play() failed:', playErr);
       }
-      if (gpsTimeoutRef.current) {
-        clearTimeout(gpsTimeoutRef.current);
+    } else {
+      console.error('❌ videoRef still null after delay');
+      // Clean up stream since we cannot display it
+      stream.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+      setShowCamera(false);
+    }
+  };
+
+  const takePhoto = () => {
+    if (videoRef.current) {
+      const photo = captureFrame(videoRef.current);
+      setCapturedPhoto(photo);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      setShowCamera(false);
+      setPhotoTaken(true);
+      // Save photo to state
+      const currentPhotos = state.photos || [];
+      const updatedPhotos = [...currentPhotos, photo];
+      // Keep only last 3 photos (for 3 locations)
+      while (updatedPhotos.length > 3) updatedPhotos.shift();
+      updateState({ photos: updatedPhotos });
+    }
+  };
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
 
-  // GPS Tracking
+  // GPS tracking - continue even after success to detect arrival
   useEffect(() => {
-    if (!currentLocation || state.userArrived) {
-      return;
-    }
+    if (!currentLocation) return;
 
     let signalReceived = false;
 
@@ -74,545 +152,331 @@ export function Phase3Clue({
           currentLocation.coordinates.lat,
           currentLocation.coordinates.lng
         );
-
         setCurrentDistance(distance);
 
-        if (distance <= ARRIVAL_RADIUS_METERS) {
-          updateState({ userArrived: true });
-          if (watchIdRef.current !== null) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-            watchIdRef.current = null;
-          }
+        // Enable completion when within 50m AND answer already correct
+        if (distance <= ARRIVAL_RADIUS_METERS && showSuccess && !canComplete) {
+          setCanComplete(true);
+          // Start 5 minute cooldown
+          const cooldownEndTime = Date.now() + 5 * 60 * 1000;
+          setCooldownEnd(cooldownEndTime);
+          // Store in localStorage for persistence across reloads
+          try {
+            const stored = localStorage.getItem('bubu_rapido_state');
+            if (stored) {
+              const st = JSON.parse(stored);
+              st.cooldownEnd = cooldownEndTime;
+              localStorage.setItem('bubu_rapido_state', JSON.stringify(st));
+            }
+          } catch (e) { }
         }
       },
       (error) => {
-        console.error("GPS Error:", error);
-        setGpsError(
-          error.code === 1
-            ? "Location permission denied"
-            : "GPS signal unavailable"
-        );
+        setGpsError(error.code === 1 ? "Location permission denied" : "GPS unavailable");
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
 
-    // Show override button after 30 seconds of no GPS signal
     gpsTimeoutRef.current = setTimeout(() => {
-      if (!signalReceived && !state.userArrived) {
-        setGpsNoSignal(true);
-      }
+      if (!signalReceived && !showSuccess) setGpsNoSignal(true);
     }, 30000);
 
     return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-      if (gpsTimeoutRef.current) {
-        clearTimeout(gpsTimeoutRef.current);
-      }
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+      if (gpsTimeoutRef.current) clearTimeout(gpsTimeoutRef.current);
     };
-  }, [currentLocation, state.userArrived, updateState]);
+  }, [currentLocation, showSuccess]);
 
+  // Handle timer expiration
   const handleTimerExpire = () => {
+    setTimerExpired(true);
     updateState({ timerExpired: true });
   };
 
-  const handleShowMap = () => {
-    updateState({ mapVisible: true });
+  // Handle correct answer
+  const handleCorrectAnswer = (isFromGPS = false) => {
+    setShowSuccess(true);
+    updateState({ bubuPoints: state.bubuPoints + 100 });
+    setShowMapReward(true); // Show map immediately on correct answer
   };
 
-  const handleManualOverride = () => {
-    updateState({ userArrived: true, gpsOverrideUsed: true });
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-  };
-
+  // Handle submit answer
   const handleSubmitAnswer = () => {
-    const normalizedAnswer = userAnswer.trim().toLowerCase();
+    if (!userAnswer.trim() || showSuccess) return;
+
+    const normalized = userAnswer.trim().toLowerCase();
     const allAnswers = [
       currentLocation.answer.toLowerCase(),
-      ...currentLocation.alternateAnswers.map((a) => a.toLowerCase()),
+      ...currentLocation.alternateAnswers.map(a => a.toLowerCase())
     ];
 
-    const isCorrect = allAnswers.includes(normalizedAnswer);
-
-    if (isCorrect) {
-      setShowSuccess(true);
-      const newPoints = state.bubuPoints + 100;
-      updateState({ bubuPoints: newPoints });
-
-      setTimeout(() => {
-        setShowContinue(true);
-      }, 2000);
+    if (allAnswers.includes(normalized)) {
+      handleCorrectAnswer();
     } else {
-      setShakeTrigger((prev) => prev + 1);
+      setShakeTrigger(prev => prev + 1);
     }
   };
 
+  // Handle continue to next location
   const handleContinue = () => {
     setIsLoading(true);
     setTimeout(() => {
-      if (isLastLocation) {
-        onPhaseComplete();
-      } else {
-        // Move to next location and reset phase 3 state
-        updateState({
-          currentLocationIndex: state.currentLocationIndex + 1,
-          timerExpired: false,
-          mapVisible: false,
-          userArrived: false,
-          answerSubmitted: false,
-          gpsOverrideUsed: false,
-        });
+      // Direct localStorage update
+      try {
+        const stored = localStorage.getItem('bubu_rapido_state');
+        if (stored) {
+          const st = JSON.parse(stored);
+          if (isLastLocation) {
+            st.currentPhase = 4;
+          } else {
+            st.currentLocationIndex = st.currentLocationIndex + 1;
+            st.timerExpired = false;
+            st.userArrived = false;
+            st.answerSubmitted = false;
+            st.gpsOverrideUsed = false;
+          }
+          localStorage.setItem('bubu_rapido_state', JSON.stringify(st));
+        }
+      } catch (err) {
+        console.error("Failed to update localStorage", err);
       }
+      // Force reload to complete navigation
+      setTimeout(() => window.location.reload(), 50);
     }, 300);
   };
 
-  const handleRatingSubmit = () => {
-    updateState({ answerSubmitted: true });
-    setTimeout(() => {
-      handleContinue();
-    }, 500);
+  // Dev mode - simulate arrival
+  const handleSimulateArrival = () => {
+    handleCorrectAnswer(true);
   };
+
+  // Expose for dev mode
+  useEffect(() => {
+    (window as any).devSimulateArrival = handleSimulateArrival;
+    (window as any).devEnableComplete = () => { setCanComplete(true); setCooldownEnd(Date.now()); setCooldownRemaining(0); };
+    (window as any).devSkipToPhoto = () => { setCanComplete(true); setCooldownEnd(Date.now() + 100); setCooldownRemaining(0); };
+    (window as any).devOpenCamera = startCamera;
+    return () => {
+      delete (window as any).devSimulateArrival;
+      delete (window as any).devEnableComplete;
+      delete (window as any).devSkipToPhoto;
+      delete (window as any).devOpenCamera;
+    };
+  }, [handleCorrectAnswer]);
 
   const handleLogoTap = () => {
     if (!showDevMode) return;
-
     logoTapCount.current++;
-    
-    if (tapTimeout.current) {
-      clearTimeout(tapTimeout.current);
-    }
-
-    tapTimeout.current = setTimeout(() => {
-      logoTapCount.current = 0;
-    }, 500);
-
+    if (tapTimeout.current) clearTimeout(tapTimeout.current);
+    tapTimeout.current = setTimeout(() => { logoTapCount.current = 0; }, 500);
     if (logoTapCount.current === 5) {
       onSkipPhase?.();
       logoTapCount.current = 0;
     }
   };
 
-  // Determine current sub-step
-  const showClueAndTimer = !state.timerExpired && !state.userArrived;
-  const showMapHint = state.timerExpired && state.mapVisible && !state.userArrived;
-  const showMapButton = state.timerExpired && !state.mapVisible && !state.userArrived;
-  const showArrivalAndAnswer = state.userArrived && !state.answerSubmitted;
-  const showRatings = state.answerSubmitted && !isLastLocation && state.currentLocationIndex < 2;
-
   return (
-    <div className="min-h-screen flex flex-col px-4 py-8">
-      {/* Points Badge */}
-      <PointsBadge points={state.bubuPoints} />
-
-      {/* Success Animation */}
-      <AnimatePresence>
-        {showSuccess && <SuccessAnimation />}
-      </AnimatePresence>
-
-      {/* Header */}
-      <div
-        onClick={handleLogoTap}
-        className="text-center mb-6 cursor-pointer"
-      >
-        <div className="text-4xl mb-2">🛺</div>
-        <h1 className="text-2xl font-extrabold text-primary">
-          Bubu ka Rapido
-        </h1>
+    <div className="min-h-screen flex flex-col px-4 py-4">
+      <div className="flex justify-between items-start mb-4">
+        <Header onLogoTap={handleLogoTap} className="mb-0 flex-1" />
+        <div className="mt-1">
+          <PointsBadge points={state.bubuPoints} />
+        </div>
       </div>
 
-      {/* Content */}
+      <AnimatePresence>{showSuccess && <SuccessAnimation />}</AnimatePresence>
+
       <div className="flex-1 max-w-md mx-auto w-full space-y-4">
-        <AnimatePresence mode="wait">
-          {/* SUB-STEP A: CLUE + TIMER */}
-          {showClueAndTimer && (
-            <motion.div
-              key="clue-timer"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
+        {/* Location indicator */}
+        <div className="text-center">
+          <span className="text-sm font-semibold text-text-secondary">
+            Location {state.currentLocationIndex + 1} of 3
+          </span>
+        </div>
+
+        {/* Clue */}
+        <div className="card">
+          <p className="text-lg italic text-text-primary leading-relaxed">
+            {currentLocation.clue}
+          </p>
+        </div>
+
+        {/* Answer Input - Always visible */}
+        {!showSuccess && (
+          <motion.div
+            key={shakeTrigger}
+            animate={shakeTrigger > 0 ? { x: [0, -10, 10, -10, 10, 0] } : {}}
+            transition={{ duration: 0.5 }}
+            className="card space-y-3"
+          >
+            <p className="text-sm text-text-secondary text-center">
+              What do you think this place is?
+            </p>
+            <input
+              type="text"
+              value={userAnswer}
+              onChange={(e) => setUserAnswer(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmitAnswer()}
+              placeholder="Type your guess..."
+              className="input-field text-center"
+              autoFocus
+            />
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleSubmitAnswer}
+              disabled={!userAnswer.trim()}
+              className="btn-primary w-full"
             >
-              <div className="text-center">
-                <span className="text-sm font-semibold text-text-secondary">
-                  📍 Clue #{state.currentLocationIndex + 1} of 3
-                </span>
-              </div>
+              Submit Answer
+            </motion.button>
+            {shakeTrigger > 0 && (
+              <p className="text-sm text-text-secondary text-center">Not quite... try again!</p>
+            )}
+          </motion.div>
+        )}
 
-              <div className="card">
-                <p className="text-lg italic text-text-primary leading-relaxed">
-                  {currentLocation.clue}
-                </p>
-              </div>
+        {/* Timer - Always visible until answer correct */}
+        {!showSuccess && (
+          <div className="card flex flex-col items-center py-4">
+            <CountdownTimer
+              seconds={CLUE_TIMER_SECONDS}
+              onExpire={handleTimerExpire}
+            />
+            <p className="text-sm text-text-secondary mt-2">
+              {timerExpired ? "Time's up! Map hint revealed." : "Time until map hint"}
+            </p>
+          </div>
+        )}
 
-              <div className="card flex flex-col items-center py-8">
-                <CountdownTimer
-                  seconds={CLUE_TIMER_SECONDS}
-                  onExpire={handleTimerExpire}
-                />
-                <p className="text-sm text-text-secondary mt-4">
-                  Time until map hint appears
-                </p>
-              </div>
-
-              {/* GPS Status Indicator */}
-              <div className="flex items-center justify-center gap-2 text-sm text-text-secondary">
-                <div className="animate-pulse">📡</div>
-                <span>
-                  {currentDistance === null
-                    ? "Tracking your location..."
-                    : currentDistance < 200
-                    ? "🟡 Getting closer..."
-                    : "📍 Keep searching, Bubu!"}
-                </span>
-              </div>
-            </motion.div>
-          )}
-
-          {/* SUB-STEP B: MAP BUTTON */}
-          {showMapButton && (
-            <motion.div
-              key="map-button"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
+        {/* Map Hint (after timer expires) or Map Reward (after correct answer) */}
+        {(timerExpired || showMapReward) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="card space-y-3"
+          >
+            <p className="text-sm font-semibold text-text-primary text-center">
+              {showMapReward ? "🎉 Here's your reward!" : "Need help? Here's a hint:"}
+            </p>
+            <MapEmbed
+              lat={currentLocation.coordinates.lat}
+              lng={currentLocation.coordinates.lng}
+              zoom={currentLocation.mapZoom}
+            />
+            <div className="flex items-center justify-center gap-2 text-sm text-text-secondary">
+              <Navigation className="w-4 h-4 animate-pulse" />
+              {currentDistance === null
+                ? "Tracking..."
+                : currentDistance <= ARRIVAL_RADIUS_METERS
+                  ? "You're here!"
+                  : `${Math.round(currentDistance)}m away`}
+            </div>
+            {/* Start Ride Button - Opens Google Maps Navigation in Bike Mode */}
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${currentLocation.coordinates.lat},${currentLocation.coordinates.lng}&travelmode=bike`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary w-full flex items-center justify-center gap-2"
             >
-              <div className="text-center">
-                <span className="text-sm font-semibold text-text-secondary">
-                  📍 Clue #{state.currentLocationIndex + 1} of 3
-                </span>
-              </div>
+              <span>🛵</span> Start Ride
+            </a>
+            <p className="text-xs text-text-secondary text-center">Opens maps with route in bike mode</p>
+          </motion.div>
+        )}
 
-              <div className="card">
-                <p className="text-lg italic text-text-primary leading-relaxed">
-                  {currentLocation.clue}
-                </p>
-              </div>
-
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleShowMap}
-                className="btn-primary w-full text-xl py-4"
-              >
-                🗺️ I need a map hint!
-              </motion.button>
-
-              {/* GPS Status */}
-              {gpsError || gpsNoSignal ? (
-                <div className="card space-y-3">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-text-primary">
-                        GPS seems to be sleeping!
-                      </p>
-                      <p className="text-sm text-text-secondary">
-                        Make sure location is enabled, or...
-                      </p>
-                    </div>
-                  </div>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleManualOverride}
-                    className="btn-secondary w-full"
-                  >
-                    I've reached the spot! ✋
-                  </motion.button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2 text-sm text-text-secondary">
-                  <div className="animate-pulse">📡</div>
-                  <span>
-                    {currentDistance === null
-                      ? "Tracking your location..."
-                      : currentDistance < 200
-                      ? "🟡 Getting closer..."
-                      : "📍 Keep searching, Bubu!"}
-                  </span>
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* SUB-STEP B: MAP EMBED */}
-          {showMapHint && (
-            <motion.div
-              key="map-hint"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
+        {/* Success + Points + Continue */}
+        {showSuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="card text-center space-y-4"
+          >
+            <div className="text-4xl">🎉</div>
+            <h2 className="text-2xl font-bold text-success">Correct!</h2>
+            <p className="text-lg font-semibold text-primary">+100 Bubu Points</p>
+            {showMapReward && (
+              <p className="text-sm text-text-secondary">Your reward map is shown above!</p>
+            )}
+            <motion.button
+              whileHover={canComplete && !cooldownRemaining ? { scale: 1.02 } : {}}
+              whileTap={canComplete && !cooldownRemaining ? { scale: 0.98 } : {}}
+              onClick={handleContinue}
+              disabled={isLoading || !canComplete || cooldownRemaining > 0}
+              className={`btn-primary w-full ${!canComplete ? 'opacity-50' : ''}`}
             >
-              <div className="text-center">
-                <span className="text-sm font-semibold text-text-secondary">
-                  📍 Clue #{state.currentLocationIndex + 1} of 3
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Loading...
                 </span>
-              </div>
-
-              <div className="card">
-                <MapEmbed
-                  lat={currentLocation.coordinates.lat}
-                  lng={currentLocation.coordinates.lng}
-                  zoom={currentLocation.mapZoom}
-                />
-              </div>
-
-              {/* GPS Status with Override */}
-              {gpsError || gpsNoSignal ? (
-                <div className="card space-y-3">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-text-primary">
-                        GPS seems to be sleeping!
-                      </p>
-                      <p className="text-sm text-text-secondary">
-                        Make sure location is enabled, or...
-                      </p>
-                    </div>
-                  </div>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleManualOverride}
-                    className="btn-secondary w-full"
-                  >
-                    I've reached the spot! ✋
-                  </motion.button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2 text-sm text-text-secondary">
+              ) : !canComplete ? (
+                <span className="flex items-center justify-center gap-2">
                   <Navigation className="w-4 h-4 animate-pulse" />
-                  <span>
-                    {currentDistance === null
-                      ? "Tracking your location..."
-                      : currentDistance < 200
-                      ? "🟡 Getting closer..."
-                      : currentDistance <= ARRIVAL_RADIUS_METERS
-                      ? "🟢 You're there!"
-                      : "📍 Keep going, Bubu!"}
-                  </span>
-                </div>
+                  Waiting for arrival...
+                </span>
+              ) : cooldownRemaining > 0 ? (
+                `Complete in ${cooldownRemaining}s`
+              ) : isLastLocation ? (
+                "Finish Adventure"
+              ) : photoTaken ? (
+                "Next Location →"
+              ) : (
+                "Complete Adventure →"
               )}
-            </motion.div>
-          )}
+            </motion.button>
+          </motion.div>
+        )}
 
-          {/* SUB-STEP D & E: ARRIVAL + ANSWER */}
-          {showArrivalAndAnswer && (
-            <motion.div
-              key="arrival-answer"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
-            >
-              {/* Arrival Animation */}
-              <div className="flex justify-center">
-                <motion.div
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="relative"
-                >
-                  <div className="text-6xl">📍</div>
-                  <motion.div
-                    animate={{ scale: [1, 1.5, 1], opacity: [1, 0, 1] }}
-                    transition={{
-                      duration: 1.5,
-                      repeat: Infinity,
-                      ease: "easeOut",
-                    }}
-                    className="absolute inset-0 rounded-full border-4 border-primary"
-                  />
-                </motion.div>
-              </div>
-
-              <div className="card text-center space-y-4">
-                <h2 className="text-2xl font-bold text-primary">
-                  You made it! 🎉
-                </h2>
-                <p className="text-text-secondary">
-                  Now tell me Bubu, what do you think this place is?
-                </p>
-
-                <motion.div
-                  key={shakeTrigger}
-                  animate={
-                    shakeTrigger > 0
-                      ? {
-                          x: [0, -10, 10, -10, 10, 0],
-                        }
-                      : {}
-                  }
-                  transition={{ duration: 0.5 }}
-                  className="space-y-3"
-                >
-                  <input
-                    type="text"
-                    value={userAnswer}
-                    onChange={(e) => setUserAnswer(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === "Enter") {
-                        handleSubmitAnswer();
-                      }
-                    }}
-                    placeholder="Type the place name here..."
-                    className="input-field text-center text-lg"
-                    autoFocus
-                  />
-
-                  {shakeTrigger > 0 && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-sm text-text-secondary"
-                    >
-                      Hmm, not quite... try again! 💭
-                    </motion.p>
-                  )}
-
-                  {!showContinue && (
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleSubmitAnswer}
-                      className="btn-primary w-full"
-                    >
-                      Submit My Answer ✨
-                    </motion.button>
-                  )}
-
-                  {showContinue && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="space-y-3"
-                    >
-                      <p className="text-lg font-bold text-success">
-                        🎉 Correct! Amazing, Bubu! +100 Bubu Points!
-                      </p>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={handleContinue}
-                        disabled={isLoading}
-                        className="btn-primary w-full"
-                      >
-                        {isLoading ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                            <span>Loading...</span>
-                          </div>
-                        ) : (
-                          "Continue →"
-                        )}
-                      </motion.button>
-                    </motion.div>
-                  )}
-                </motion.div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* SUB-STEP F: RATINGS (Locations 1 & 2 only) */}
-          {showRatings && (
-            <motion.div
-              key="ratings"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
-            >
-              <div className="card space-y-6">
-                <h2 className="text-xl font-bold text-text-primary text-center">
-                  Rate Your Experience! ⭐
-                </h2>
-
-                {/* Activity Rating */}
-                <div className="space-y-3">
-                  <p className="font-semibold text-text-primary">
-                    How fun was this activity? 🎉
-                  </p>
-                  <div className="flex justify-center">
-                    <StarRating
-                      value={state.activityRatings[state.currentLocationIndex]}
-                      onChange={(rating) =>
-                        updateState({
-                          activityRatings: state.activityRatings.map(
-                            (r, i) =>
-                              i === state.currentLocationIndex ? rating : r
-                          ),
-                        })
-                      }
-                      size="sm"
-                    />
-                  </div>
+        {/* Photo capture - shows after cooldown ends */}
+        {showSuccess && canComplete && cooldownRemaining === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="card space-y-3"
+          >
+            {showCamera ? (
+              <>
+                <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-lg" />
+                <div className="flex gap-2">
+                  <button onClick={takePhoto} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                    <Camera className="w-5 h-5" /> Capture
+                  </button>
+                  <button onClick={() => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); setShowCamera(false); }} className="btn-secondary flex-1">
+                    Cancel
+                  </button>
                 </div>
+              </>
+            ) : capturedPhoto ? (
+              <>
+                <img src={capturedPhoto} alt="Captured" className="w-full rounded-lg" />
+                <button onClick={() => { setCapturedPhoto(null); setPhotoTaken(false); startCamera(); }} className="btn-secondary w-full">
+                  Retake Photo
+                </button>
+              </>
+            ) : (
+              <button onClick={startCamera} className="btn-secondary w-full flex items-center justify-center gap-2">
+                <Camera className="w-5 h-5" /> Take a Photo 📸
+              </button>
+            )}
+          </motion.div>
+        )}
 
-                {/* Service Rating */}
-                <div className="space-y-3">
-                  <p className="font-semibold text-text-primary">
-                    How was your Rapido Premium's service? 🛺💕
-                  </p>
-                  <div className="flex justify-center">
-                    <StarRating
-                      value={state.serviceRatings[state.currentLocationIndex]}
-                      onChange={(rating) =>
-                        updateState({
-                          serviceRatings: state.serviceRatings.map(
-                            (r, i) =>
-                              i === state.currentLocationIndex ? rating : r
-                          ),
-                        })
-                      }
-                      size="sm"
-                    />
-                  </div>
-                </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleRatingSubmit}
-                  disabled={
-                    !state.activityRatings[state.currentLocationIndex] ||
-                    !state.serviceRatings[state.currentLocationIndex] ||
-                    isLoading
-                  }
-                  className="btn-primary w-full"
-                >
-                  {isLoading ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                      <span>Submitting...</span>
-                    </div>
-                  ) : (
-                    "Submit Ratings ✨"
-                  )}
-                </motion.button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* GPS Status */}
+        {!showSuccess && (
+          <div className="text-center text-sm text-text-secondary">
+            {currentDistance === null
+              ? "Tracking your location..."
+              : currentDistance < 200
+                ? "Getting closer..."
+                : "Keep searching!"}
+          </div>
+        )}
       </div>
 
-      {/* Dev mode indicator */}
       {showDevMode && (
-        <div className="fixed bottom-2 left-2 text-xs text-text-secondary/50">
-          Phase 3 - Location {state.currentLocationIndex + 1}/3
+        <div className="fixed bottom-2 left-2 text-xs text-text-secondary/40">
+          Phase 3 - Loc {state.currentLocationIndex + 1}/3
         </div>
       )}
     </div>

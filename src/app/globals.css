@@ -2,56 +2,148 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Light Mode - Light Blue */
+  --color-background: #E3F2FD;
+  --color-surface: #FFFFFF;
+  --color-primary: #1976D2;
+  --color-primary-dark: #1565C0;
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: #42A5F5;
+  --color-secondary-foreground: #FFFFFF;
+  --color-accent: #42A5F5;
+  --color-text-primary: #1A237E;
+  --color-text-secondary: #546E7A;
+  --color-gold: #FFD700;
+  --color-success: #4CAF50;
+  --color-muted: #BBDEFB;
+  --color-border: #BBDEFB;
+}
+
+.dark {
+  /* Dark Mode - Midnight Blue */
+  --color-background: #0D1B2A;
+  --color-surface: #1B2838;
+  --color-primary: #64B5F6;
+  --color-primary-dark: #1976D2;
+  --color-primary-foreground: #0D1B2A;
+  --color-secondary: #90CAF9;
+  --color-secondary-foreground: #0D1B2A;
+  --color-accent: #90CAF9;
+  --color-text-primary: #E3F2FD;
+  --color-text-secondary: #90A4AE;
+  --color-gold: #FFD54F;
+  --color-success: #81C784;
+  --color-muted: #1E3A5F;
+  --color-border: #1E3A5F;
+}
+
 @layer base {
-  body {
-    @apply bg-gradient-pink min-h-screen;
-    font-feature-settings: "rlig" 1, "calt" 1;
+  * {
+    @apply border-border;
   }
-  
+
+  body {
+    @apply bg-background text-text-primary min-h-screen;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
   }
-  
+
   ::-webkit-scrollbar-track {
-    @apply bg-background/50 rounded-full;
+    @apply bg-transparent;
   }
-  
+
   ::-webkit-scrollbar-thumb {
     @apply bg-muted rounded-full;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-secondary/50;
+    background-color: rgba(100, 181, 246, 0.5);
   }
 }
 
 @layer components {
   .btn-primary {
     @apply rounded-full bg-primary text-white font-bold py-3 px-6 shadow-lg;
-    @apply hover:bg-primary/90 active:scale-95 transition-all duration-200;
-    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary;
-  }
-  
-  .btn-secondary {
-    @apply rounded-full border-2 border-primary text-primary font-bold py-3 px-6;
-    @apply hover:bg-primary/5 active:scale-95 transition-all duration-200;
+    @apply active:scale-95 transition-all duration-200;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
-  .card {
-    @apply rounded-2xl shadow-lg bg-white p-6;
+
+  .btn-primary:hover:not(:disabled) {
+    @apply bg-primary-dark;
   }
-  
+
+  .btn-secondary {
+    @apply rounded-full border-2 border-primary text-primary font-bold py-3 px-6;
+    @apply active:scale-95 transition-all duration-200;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: rgba(25, 118, 210, 0.1);
+  }
+
+  .btn-ghost {
+    @apply rounded-full text-text-secondary font-medium py-2 px-4;
+    @apply active:scale-95 transition-all duration-200;
+  }
+
+  .btn-ghost:hover {
+    background-color: rgba(187, 222, 251, 0.5);
+  }
+
+  .card {
+    @apply rounded-2xl shadow-lg bg-surface p-6;
+    transition: background-color 0.3s ease;
+  }
+
   .input-field {
-    @apply rounded-xl border-2 border-muted px-4 py-3 w-full;
-    @apply focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20;
-    @apply transition-all duration-200;
+    @apply rounded-xl border-2 border-muted px-4 py-3 w-full bg-surface;
+    @apply focus:outline-none focus:border-primary;
+    @apply transition-all duration-200 text-text-primary;
+  }
+
+  .input-field::placeholder {
+    color: rgba(84, 110, 122, 0.6);
+  }
+
+  .input-field:focus {
+    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.2);
+  }
+
+  .glass {
+    @apply bg-surface backdrop-blur-md;
+  }
+
+  .dark .glass {
+    background-color: rgba(27, 40, 56, 0.8);
   }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .theme-transition {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px var(--color-primary);
+  }
+
+  .pulse-gentle {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 }

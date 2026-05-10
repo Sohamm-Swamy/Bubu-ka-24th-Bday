@@ -30,6 +30,9 @@ export interface GameState {
   // Phase 5
   memorableMoment: string;
   finalRating: number | null;
+
+  // Photos from Phase 3 locations
+  photos: string[];
 }
 
 const DEFAULT_STATE: GameState = {
@@ -48,6 +51,7 @@ const DEFAULT_STATE: GameState = {
   selectedBonusServices: [],
   memorableMoment: "",
   finalRating: null,
+  photos: [],
 };
 
 const STORAGE_KEY = "bubu_rapido_state";

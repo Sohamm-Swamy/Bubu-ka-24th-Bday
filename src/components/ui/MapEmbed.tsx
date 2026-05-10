@@ -55,7 +55,7 @@ export function MapEmbed({ lat, lng, zoom }: MapEmbedProps) {
         )}
       </div>
 
-      {!isPlaceholder && (
+      {/* {!isPlaceholder && (
         <a
           href={`https://maps.google.com/?q=${lat},${lng}`}
           target="_blank"
@@ -65,14 +65,14 @@ export function MapEmbed({ lat, lng, zoom }: MapEmbedProps) {
           <ExternalLink className="w-4 h-4" />
           <span>Open in Google Maps</span>
         </a>
-      )}
+      )} */}
 
-      {/* Note for developer */}
+      {/* Note for developer
       {isPlaceholder && (
         <p className="text-xs text-text-secondary text-center">
           Note: Full map style customization requires Maps JavaScript API with billing-enabled key
         </p>
-      )}
+      )} */}
     </div>
   );
 }
