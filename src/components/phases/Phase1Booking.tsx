@@ -133,7 +133,7 @@ export function Phase1Booking({ showDevMode, forceRemount }: Phase1BookingProps)
                 onClick={handleBook}
                 className="btn-primary w-full text-xl py-4"
               >
-                Book Your Scooty
+                Book Your Rapido!
               </button>
             </motion.div>
           )}

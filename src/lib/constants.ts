@@ -59,3 +59,8 @@ export const KISSES_REQUIRED = 24;       // For the OTP reveal message
 
 // Your email address to receive the selected rewards
 export const YOUR_EMAIL = "sohamm746@gmail.com";
+
+// ============================================================
+// DEV MODE SETTINGS
+// ============================================================
+export const DEV_MODE_ENABLED = false; // Set to TRUE for testing, FALSE for production

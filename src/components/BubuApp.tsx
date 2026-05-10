@@ -8,6 +8,7 @@ import { Phase3Clue } from "@/components/phases/Phase3Clue";
 import { Phase4Reward } from "@/components/phases/Phase4Reward";
 import { Phase5Outro } from "@/components/phases/Phase5Outro";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { DEV_MODE_ENABLED } from "@/lib/constants";
 
 export function BubuApp() {
   const { state, isLocalStorageAvailable, resetState, updateState } = useGameState();
@@ -24,6 +25,9 @@ export function BubuApp() {
     // Phase transitions are handled in the useGameState hook
     // Each phase component calls onNext which triggers the transition
   };
+
+  // Only show dev mode UI if both the toggle was activated AND DEV_MODE_ENABLED is true
+  const actualDevMode = showDevMode && DEV_MODE_ENABLED;
 
   const handleSkipPhase = () => {
     // Skip to next phase for dev mode
@@ -81,7 +85,7 @@ export function BubuApp() {
       )}
 
       {/* Dev Mode Panel */}
-      {showDevMode && (
+      {showDevMode && DEV_MODE_ENABLED && (
         <div className="fixed bottom-4 left-4 z-50 max-h-[80vh] overflow-y-auto">
           <div className="bg-surface rounded-xl shadow-2xl p-4 border-2 border-muted max-w-xs space-y-3">
             <h3 className="font-bold text-text-primary text-sm">
@@ -212,7 +216,7 @@ export function BubuApp() {
               <Phase1Booking
                 key={remountKey}
                 onNext={() => {}}
-                showDevMode={showDevMode}
+                showDevMode={actualDevMode}
                 onSkipPhase={handleSkipPhase}
                 forceRemount={forceRemount}
               />
@@ -222,7 +226,7 @@ export function BubuApp() {
               <Phase2OTP
                 key={remountKey}
                 onNext={() => {}}
-                showDevMode={showDevMode}
+                showDevMode={actualDevMode}
                 onSkipPhase={handleSkipPhase}
                 forceRemount={forceRemount}
               />
@@ -235,7 +239,7 @@ export function BubuApp() {
                   updateState({ currentPhase: 4 });
                   forceRemount();
                 }}
-                showDevMode={showDevMode}
+                showDevMode={actualDevMode}
                 onSkipPhase={handleSkipPhase}
                 forceRemount={forceRemount}
               />
@@ -245,15 +249,15 @@ export function BubuApp() {
               <Phase4Reward
                 key={remountKey}
                 onNext={() => {}}
-                showDevMode={showDevMode}
+                showDevMode={actualDevMode}
                 onSkipPhase={handleSkipPhase}
                 forceRemount={forceRemount}
               />
             );
           case 5:
-            return <Phase5Outro key={remountKey} showDevMode={showDevMode} forceRemount={forceRemount} />;
+            return <Phase5Outro key={remountKey} showDevMode={actualDevMode} forceRemount={forceRemount} />;
           default:
-            return <Phase1Booking key={remountKey} showDevMode={showDevMode} forceRemount={forceRemount} />;
+            return <Phase1Booking key={remountKey} showDevMode={actualDevMode} forceRemount={forceRemount} />;
         }
       })()}
 
@@ -262,30 +266,32 @@ export function BubuApp() {
         <ThemeToggle />
       </div>
 
-      {/* Hidden dev mode toggle - tap footer 5 times */}
-      <button
-        onClick={() => {
-          const footer = document.querySelector('[data-dev-toggle="true"]');
-          const tapCount = parseInt(footer?.getAttribute('data-tap-count') || '0');
-          const newCount = tapCount + 1;
-          footer?.setAttribute('data-tap-count', newCount.toString());
-          
-          if (newCount >= 5) {
-            setShowDevMode(!showDevMode);
-            footer?.setAttribute('data-tap-count', '0');
-          }
-          
-          setTimeout(() => {
-            if (newCount < 5) {
+      {/* Hidden dev mode toggle - tap footer 5 times (only works if DEV_MODE_ENABLED is true) */}
+      {DEV_MODE_ENABLED && (
+        <button
+          onClick={() => {
+            const footer = document.querySelector('[data-dev-toggle="true"]');
+            const tapCount = parseInt(footer?.getAttribute('data-tap-count') || '0');
+            const newCount = tapCount + 1;
+            footer?.setAttribute('data-tap-count', newCount.toString());
+
+            if (newCount >= 5) {
+              setShowDevMode(!showDevMode);
               footer?.setAttribute('data-tap-count', '0');
             }
-          }, 2000);
-        }}
-        className="fixed bottom-0 left-0 right-0 h-8 z-40"
-        aria-label="Dev mode toggle"
-        data-dev-toggle="true"
-        data-tap-count="0"
-      />
+
+            setTimeout(() => {
+              if (newCount < 5) {
+                footer?.setAttribute('data-tap-count', '0');
+              }
+            }, 2000);
+          }}
+          className="fixed bottom-0 left-0 right-0 h-8 z-40"
+          aria-label="Dev mode toggle"
+          data-dev-toggle="true"
+          data-tap-count="0"
+        />
+      )}
     </div>
   );
 }
